@@ -4,6 +4,10 @@
 
 ### Simulator
 
+This model extends the [parasite transmission method published in Wellcome Open
+Research](https://wellcomeopenresearch.org/articles/9-215) by incorporating
+within-host ($s_w$) and transmission ($s_t$) selection coefficients.
+
 The malaria simulator (`dl4bi_sps.malaria.MalariaTransmission`) models parasite
 transmission across discrete generations. Conceptually, transmission forms a
 directed acyclic graph in which nodes are human hosts and edges are
