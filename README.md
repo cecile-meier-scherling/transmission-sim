@@ -1,19 +1,102 @@
 # Stochastic Process Simulators (`dl4bi-sps`)
 
-## Install
-Install with the appropriate command. If JAX isn't installed already, we recommend using one of the `dl4bi-sps[<jax-version>]` installs. The distribution name is `dl4bi-sps`, and the import package is `dl4bi_sps`.
+## Overview
+
+### Simulator
+
+The malaria simulator (`dl4bi_sps.malaria.MalariaTransmission`) models parasite
+transmission across discrete generations. Conceptually, transmission forms a
+directed acyclic graph in which nodes are human hosts and edges are
+mosquito-mediated transmission events. The implementation tracks counts of host
+states (mutant and total allele counts), rather than storing individual hosts or
+edges. Each generation contains a fixed effective population of $N_h$ hosts
+from which transmission sources are sampled.
+
+Selection acts at two distinct stages:
+
+- **Within-host selection** ($s_w \in [-1, 0)$): represents the replicative
+  fitness cost of K13 resistance mutations in the absence of drug pressure.
+  Mutant alleles receive weight $1 + s_w$ during within-host resampling, while
+  wild-type alleles receive weight 1. Setting `sw=0` disables this resampling.
+- **Transmission selection** ($s_t \in [0, 1]$): represents the survival
+  advantage of hosts carrying K13 mutant alleles under artemisinin treatment.
+  A host with mutant allele frequency $p$ receives source-selection weight
+  $1 + s_t p$. Treatment is represented by this weight, rather than simulated
+  explicitly.
+
+Each vector bite transmits $Q$ alleles. With probability `chi`, a recipient
+is superinfected and receives contributions from two distinct source hosts,
+for $2Q$ alleles in total. Within-host selection acts on the resulting allele
+pool. Multinomial sampling of the next
+generation preserves the host population size and introduces genetic drift.
+Founding hosts carry $Q$ alleles, with mutant counts drawn using `p_init`.
+
+See [dataset generation](examples/build_malaria_dataset.py), its
+[configuration](examples/configs/malaria_dataset.yaml), and the
+[selection analysis](examples/analyze_malaria_selection.py).
+
+## Model Parameters
+
+`Nh` and `Q` correspond to `num_hosts` and `num_transmitted_alleles` in the Python
+API. Simulator configuration uses `Prior` objects to specify fixed values or
+sampling distributions.
+
+| Parameter | Python name | Type | Description |
+|-----------|-------------|------|-------------|
+| `Nh` | `num_hosts` | `int` | Effective number of hosts per generation; clamped to at least 2 |
+| `Q` | `num_transmitted_alleles` | `int` | Number of alleles transmitted per vector bite; at least 1 |
+| `chi` | `chi` | `float` | Superinfection probability, between 0 and 1 |
+| `sw` | `sw` | `float` | Within-host selection coefficient, $s_w \in [-1, 0)$; 0 is also supported as a neutral control |
+| `st` | `st` | `float` | Transmission selection coefficient, $s_t \in [0, 1]$ |
+| `p_init` | `p_init` | `float` | Initial K13 mutant allele frequency, between 0 and 1 |
+
+Mutation is not modeled in the current implementation; `mu` is not an active
+parameter.
+
+Within each simulation batch, `Q` and `p_init` are shared, while `Nh`,
+`chi`, `sw`, and `st` are sampled independently for each simulation. Output
+host-state counts have shape `(num_simulations, num_generations, 3 * Q + 2)`;
+the first generation is the founding population.
+
+## Installation
+
+Requirements:
+
+- Python **3.11 or newer, below 4.0**, as declared in `pyproject.toml`.
+- [uv](https://github.com/astral-sh/uv) for dependency management, and Git to
+  clone the source repository.
+- A CPU for the default setup, or an NVIDIA GPU with a compatible driver for
+  the optional CUDA 12 or CUDA 13 JAX backend.
+
+`uv sync` installs the project and its dependencies, including JAX, Matplotlib,
+Hydra/OmegaConf, tqdm, Tweepy, Xarray, and Zarr. The lockfile records resolved
+versions; development dependencies include pytest, pytest-benchmark, and marimo.
+
 ```bash
-pip install dl4bi-sps # import dl4bi_sps
-pip install dl4bi-sps[cpu] # import dl4bi_sps + jax for CPU
-pip install dl4bi-sps[cuda12] # import dl4bi_sps + jax for CUDA-12
-pip install dl4bi-sps[cuda13] # import dl4bi_sps + jax for CUDA-13
+git clone https://github.com/cecile-meier-scherling/transmission-sim.git
+cd transmission-sim
+uv sync --extra cpu
+```
+
+For GPU execution, replace `--extra cpu` with `--extra cuda12` or
+`--extra cuda13`. Select exactly one backend extra; these extras conflict with
+each other. A plain `uv sync` also installs the base JAX dependency.
+
+Alternatively, install the published package with pip. The distribution name is
+`dl4bi-sps`, and the import package is `dl4bi_sps`. Choose one command:
+
+```bash
+pip install dl4bi-sps
+pip install 'dl4bi-sps[cpu]'
+pip install 'dl4bi-sps[cuda12]'
+pip install 'dl4bi-sps[cuda13]'
 ```
 
 ## View Documentation (Locally)
+
+After installing from source:
+
 ```bash
-git clone git@github.com:MLGlobalHealth/sps.git
-cd sps
-uv sync --extra {cpu,cuda12,cuda13}
 uv run --with pdoc pdoc --docformat google --math dl4bi_sps
 ```
 
@@ -87,9 +170,9 @@ with jax.enable_x64():
 
 ## Development Setup
 - Install [uv](https://docs.astral.sh/uv/).
-- Clone the repository and `cd` into it: `git clone git@github.com:MLGlobalHealth/sps.git && cd sps`
-- Install the pinned Python version if needed: `uv python install`
-- Sync the project, development dependencies, and one JAX extra: `uv sync --extra {cpu,cuda12,cuda13}`
+- Clone the repository and enter `transmission-sim` using the commands above.
+- Install a compatible Python version if needed: `uv python install 3.11`
+- Sync the project, development dependencies, and one JAX extra: `uv sync --extra cpu` (or choose `cuda12` or `cuda13`)
 - Run the test suite: `uv run pytest`
 
 `uv sync` creates a local `.venv/` and installs the project in editable mode,
