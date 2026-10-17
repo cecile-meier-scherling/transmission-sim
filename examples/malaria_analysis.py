@@ -54,15 +54,14 @@ def lineage_expectation_formula(
 
 def initial_state_m_equals_one(
     chi: float,
-    mu: float,
     sw: float,
     st: float,
     num_hosts: int,
     Q: int,
 ) -> MalariaHistogramState:
     """Create a state with one mutant lineage in the whole population."""
-    if num_hosts < 1:
-        raise ValueError("num_hosts must be at least 1.")
+    if num_hosts < 2:
+        raise ValueError("num_hosts must be at least 2 for distinct superinfection parents.")
     state_num_mutants, state_num_alleles = _host_state_table_jax(int(Q))
     num_states = state_num_mutants.shape[0]
     num_hosts_by_state = jnp.zeros((1, num_states), dtype=jnp.int32)
@@ -70,7 +69,6 @@ def initial_state_m_equals_one(
     num_hosts_by_state = num_hosts_by_state.at[:, 1].set(1)
     return MalariaHistogramState(
         chi=jnp.asarray([chi], dtype=jnp.float32),
-        mu=jnp.asarray([mu], dtype=jnp.float32),
         sw=jnp.asarray([sw], dtype=jnp.float32),
         st=jnp.asarray([st], dtype=jnp.float32),
         p_init=jnp.asarray([1.0 / float(Q)], dtype=jnp.float32),
@@ -98,7 +96,6 @@ def run_trajectory(
     num_generations: int,
     num_simulations: int,
     num_transmitted_alleles: int,
-    mu: float,
     p_init: float,
 ) -> tuple[Array, Array]:
     """Simulate and return mean allele-frequency and prevalence trajectories."""
@@ -107,7 +104,6 @@ def run_trajectory(
         num_generations=num_generations,
         num_simulations=num_simulations,
         num_transmitted_alleles=num_transmitted_alleles,
-        mu=mu,
         p_init=p_init,
     )
     mean_freq = mean_allele_frequency(

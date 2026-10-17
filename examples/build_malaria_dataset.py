@@ -23,7 +23,6 @@ class MalariaBatchSpec:
     batch_idx: int
     rng: Array
     num_transmitted_alleles: int
-    mu: float
     p_init: float
 
     @property
@@ -82,7 +81,6 @@ def main(cfg: DictConfig) -> None:
                     {
                         "group": spec.group,
                         "num_transmitted_alleles": spec.num_transmitted_alleles,
-                        "batch_mu": spec.mu,
                         "batch_p_init": spec.p_init,
                         "batch_idx": int(spec.batch_idx),
                         "sample_start": int(sample_ids[0]),
@@ -119,7 +117,7 @@ def _sample_batch_specs(
     specs = []
     for batch_idx in range(num_batches):
         rng, rng_batch_params = random.split(rng)
-        num_transmitted_alleles, mu, p_init = simulator.sample_batch_params(
+        num_transmitted_alleles, p_init = simulator.sample_batch_params(
             rng_batch_params
         )
         rng, rng_batch = random.split(rng)
@@ -128,7 +126,6 @@ def _sample_batch_specs(
                 batch_idx=batch_idx,
                 rng=rng_batch,
                 num_transmitted_alleles=num_transmitted_alleles,
-                mu=mu,
                 p_init=p_init,
             )
         )
@@ -155,7 +152,6 @@ def _simulate_dataset(
         num_generations=num_generations,
         num_simulations=num_simulations,
         num_transmitted_alleles=spec.num_transmitted_alleles,
-        mu=spec.mu,
         p_init=spec.p_init,
     )
     ds = make_histogram_dataset(
@@ -174,7 +170,6 @@ def _build_simulator(cfg: DictConfig) -> MalariaTransmission:
         num_hosts=_prior_from_config(priors.num_hosts),
         num_transmitted_alleles=_prior_from_config(priors.num_transmitted_alleles),
         chi=_prior_from_config(priors.chi),
-        mu=_prior_from_config(priors.mu),
         sw=_prior_from_config(priors.sw),
         st=_prior_from_config(priors.st),
         p_init=_prior_from_config(priors.p_init),
@@ -273,7 +268,6 @@ def make_histogram_dataset(
         attrs={
             "simulator": "malaria",
             "num_transmitted_alleles": int(batch.num_transmitted_alleles),
-            "batch_mu": float(batch.batch_mu),
             "batch_p_init": float(batch.batch_p_init),
             "max_num_hosts": max_num_hosts,
             "seed": int(seed),

@@ -15,7 +15,6 @@ class MalariaHistogramState:
     """Malaria state represented as host-state counts."""
 
     chi: Array
-    mu: Array
     sw: Array
     st: Array
     p_init: Array
@@ -31,7 +30,6 @@ class MalariaHistogramState:
             "num_hosts",
             "num_transmitted_alleles",
             "chi",
-            "mu",
             "sw",
             "st",
             "p_init",
@@ -49,7 +47,6 @@ class MalariaHistogramState:
                         dtype=jnp.float32,
                     ),
                     self.chi,
-                    self.mu,
                     self.sw,
                     self.st,
                     self.p_init,
@@ -70,7 +67,6 @@ class MalariaSimulationBatch:
     parameters: Array
     parameter_names: tuple[str, ...]
     num_transmitted_alleles: int
-    batch_mu: float
     batch_p_init: float
 
 jax.tree_util.register_pytree_node(
@@ -78,7 +74,6 @@ jax.tree_util.register_pytree_node(
     lambda d: (
         (
             d.chi,
-            d.mu,
             d.sw,
             d.st,
             d.p_init,
@@ -104,36 +99,32 @@ class MalariaTransmission:
         num_hosts: Prior for the effective number of hosts.
         num_transmitted_alleles: Prior for alleles transmitted per vector bite.
         chi: Prior over superinfection probabilities.
-        mu: Prior over per-allele per-generation mutation rates.
         sw: Prior over within-host selection coefficients.
         st: Prior over transmission selection coefficients.
         p_init: Prior over founding mutant allele frequencies.
     """
 
     num_hosts: Prior = Prior("fixed", {"value": 1024})
-    num_transmitted_alleles: Prior = Prior("randint", {"minval": 1, "maxval": 11})
+    num_transmitted_alleles: Prior = Prior("randint", {"minval": 1, "maxval": 10})
     chi: Prior = Prior("uniform", {"minval": 0.0, "maxval": 1.0})
-    mu: Prior = Prior("loguniform", {"minval": 1e-9, "maxval": 1e-7})
     sw: Prior = Prior("uniform", {"minval": -0.999, "maxval": 0.0})
     st: Prior = Prior("uniform", {"minval": 0.0, "maxval": 1.0})
     p_init: Prior = Prior("uniform", {"minval": 0.0, "maxval": 1.0})
 
-    def sample_batch_params(self, rng: Array) -> tuple[int, float, float]:
-        """Sample batch-level `(num_transmitted_alleles, mu, p_init)` values."""
-        rng_q, rng_mu, rng_p_init = random.split(rng, 3)
+    def sample_batch_params(self, rng: Array) -> tuple[int, float]:
+        """Sample batch-level `(num_transmitted_alleles, p_init)` values."""
+        rng_q, rng_p_init = random.split(rng, 2)
         num_transmitted_alleles = int(
             self.num_transmitted_alleles.sample(rng_q, (1,))[0]
         )
-        mu = float(self.mu.sample(rng_mu, (1,))[0])
         p_init = float(self.p_init.sample(rng_p_init, (1,))[0])
-        return num_transmitted_alleles, mu, p_init
+        return num_transmitted_alleles, p_init
 
     def initial_state(
         self,
         rng: Array,
         num_simulations: int,
         num_transmitted_alleles: int,
-        mu: float,
         p_init: float,
     ) -> MalariaHistogramState:
         """Sample per-simulation parameters and initialise founding host-state counts."""
@@ -148,7 +139,6 @@ class MalariaTransmission:
         chi = self.chi.sample(rng_chi, (num_simulations,)).astype(jnp.float32)
         sw = self.sw.sample(rng_sw, (num_simulations,)).astype(jnp.float32)
         st = self.st.sample(rng_st, (num_simulations,)).astype(jnp.float32)
-        mu_arr = jnp.full((num_simulations,), mu, dtype=jnp.float32)
         p_init_arr = jnp.full((num_simulations,), p_init, dtype=jnp.float32)
 
         state_num_mutants, state_num_alleles = _host_state_table_jax(
@@ -168,7 +158,6 @@ class MalariaTransmission:
         )
         return MalariaHistogramState(
             chi,
-            mu_arr,
             sw,
             st,
             p_init_arr,
@@ -185,12 +174,11 @@ class MalariaTransmission:
         num_generations: int,
         num_simulations: int,
         num_transmitted_alleles: int,
-        mu: float,
         p_init: float,
     ) -> tuple[Array, Array, Array, MalariaHistogramState]:
         """Simulate host-state count trajectories.
 
-        Batch-level parameters ``num_transmitted_alleles``, ``mu``, and ``p_init`` are
+        Batch-level parameters ``num_transmitted_alleles`` and ``p_init`` are
         shared across all simulations. ``chi``, ``num_hosts``, ``sw``, and ``st`` are
         sampled independently per simulation.
 
@@ -207,7 +195,6 @@ class MalariaTransmission:
             rng_init,
             num_simulations,
             num_transmitted_alleles,
-            mu,
             p_init,
         )
         return _simulate_jitted(rng_sim, state, num_generations)
@@ -218,7 +205,6 @@ class MalariaTransmission:
         num_generations: int,
         num_simulations: int,
         num_transmitted_alleles: int,
-        mu: float,
         p_init: float,
     ) -> MalariaSimulationBatch:
         """Simulate and package a complete static-shape histogram batch."""
@@ -227,7 +213,6 @@ class MalariaTransmission:
             num_generations=num_generations,
             num_simulations=num_simulations,
             num_transmitted_alleles=num_transmitted_alleles,
-            mu=mu,
             p_init=p_init,
         )
         parameters, parameter_names = state.parameter_matrix()
@@ -238,7 +223,6 @@ class MalariaTransmission:
             parameters=parameters,
             parameter_names=parameter_names,
             num_transmitted_alleles=int(num_transmitted_alleles),
-            batch_mu=float(mu),
             batch_p_init=float(p_init),
         )
 
@@ -290,7 +274,6 @@ def _transmit_generation(
     )
     return MalariaHistogramState(
         state.chi,
-        state.mu,
         state.sw,
         state.st,
         state.p_init,
@@ -321,20 +304,27 @@ def _next_state_probs(state: MalariaHistogramState) -> Array:
         single_parent_pool_probs,
         num_transmitted_alleles,
         state.sw,
-        state.mu,
     )
 
-    # Superinfection parent pools are modeled as independent draws from the
-    # weighted host-state distribution. The same-host draw probability is
-    # O(1 / num_hosts), which is negligible for the configured population sizes.
-    superinfected_pool_probs = jax.vmap(
-        lambda probs: jnp.convolve(probs, probs, mode="full")
-    )(single_parent_pool_probs)
+    # Draw the first host with transmission weights, then exclude that host
+    # before drawing the second. Distinct hosts can share the same state.
+    remaining_counts = jnp.maximum(
+        state.num_hosts_by_state[:, None, :]
+        - jnp.eye(parent_probs.shape[-1])[None, :, :],
+        0.0,
+    )
+    second_weights = remaining_counts * host_weights[:, None, :]
+    second_probs = second_weights / jnp.sum(second_weights, axis=-1, keepdims=True)
+    second_pool_probs = second_probs @ parent_pool_kernel
+    pair_pool_probs = jax.vmap(
+        jax.vmap(lambda first, second: jnp.convolve(first, second, mode="full")),
+        in_axes=(None, 0),
+    )(parent_pool_kernel, second_pool_probs)
+    superinfected_pool_probs = jnp.einsum("bs,bsk->bk", parent_probs, pair_pool_probs)
     superinfected_probs = _post_host_process_probs(
         superinfected_pool_probs,
         2 * num_transmitted_alleles,
         state.sw,
-        state.mu,
     )
     state_probs = jnp.concatenate(
         [
@@ -394,16 +384,13 @@ def _post_host_process_probs(
     pre_process_probs: Array,
     num_alleles: int,
     sw: Array,
-    mu: Array,
 ) -> Array:
     selection_kernel = _selection_kernel(num_alleles, sw)
-    mutation_kernel = _mutation_kernel(num_alleles, mu)
-    selected_probs = jnp.einsum(
+    return jnp.einsum(
         "bm,bms->bs",
         pre_process_probs,
         selection_kernel,
     )
-    return jnp.einsum("bs,bsr->br", selected_probs, mutation_kernel)
 
 
 def _selection_kernel(num_alleles: int, sw: Array) -> Array:
@@ -418,20 +405,6 @@ def _selection_kernel(num_alleles: int, sw: Array) -> Array:
         resample_kernel.shape,
     )
     return jnp.where(sw[:, None, None] == 0.0, identity_kernel, resample_kernel)
-
-
-def _mutation_kernel(num_alleles: int, mu: Array) -> Array:
-    rows = []
-    for num_selected_mutants in range(num_alleles + 1):
-        mutant_survival_probs = _binomial_pmf(num_selected_mutants, 1.0 - mu)
-        wild_gain_probs = _binomial_pmf(num_alleles - num_selected_mutants, mu)
-        rows.append(
-            jax.vmap(lambda a, b: jnp.convolve(a, b, mode="full"))(
-                mutant_survival_probs,
-                wild_gain_probs,
-            )
-        )
-    return jnp.stack(rows, axis=1)
 
 
 def _binomial_pmf(num_trials: int, p: Array) -> Array:

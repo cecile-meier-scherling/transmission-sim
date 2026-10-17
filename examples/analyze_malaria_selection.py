@@ -75,7 +75,6 @@ def _(mo):
     num_hosts = mo.ui.number(start=64, stop=8192, step=64, value=1024, label="num_hosts")
     q = mo.ui.number(start=1, stop=16, step=1, value=4, label="Q (num_transmitted_alleles)")
     chi = mo.ui.slider(start=0.0, stop=1.0, step=0.01, value=0.25, label="chi")
-    mu = mo.ui.slider(start=0.0, stop=0.02, step=0.0005, value=0.0, label="mu")
     p_init = mo.ui.slider(start=0.0, stop=1.0, step=0.01, value=0.05, label="p_init")
     num_generations = mo.ui.number(
         start=2, stop=512, step=1, value=64, label="num_generations"
@@ -95,9 +94,6 @@ def _(mo):
     st_max = mo.ui.slider(start=0.0, stop=1.0, step=0.01, value=1.0, label="st max")
     st_num = mo.ui.number(start=2, stop=40, step=1, value=10, label="st points")
 
-    lineage_mu = mo.ui.slider(
-        start=0.0, stop=0.02, step=0.0005, value=0.0, label="lineage mu"
-    )
     lineage_sw = mo.ui.slider(
         start=-0.999, stop=0.0, step=0.01, value=-0.2, label="lineage fixed sw"
     )
@@ -126,7 +122,7 @@ def _(mo):
     controls = mo.vstack(
         [
             mo.md("## Controls"),
-            mo.hstack([num_hosts, q, chi, mu, p_init]),
+            mo.hstack([num_hosts, q, chi, p_init]),
             mo.hstack([num_generations, num_simulations, seed]),
             mo.md("### Sweep ranges"),
             mo.hstack([fixed_st, sw_min, sw_max, sw_num]),
@@ -143,7 +139,7 @@ def _(mo):
                 ]
             ),
             mo.md("### Lineage panel"),
-            mo.hstack([lineage_mu, lineage_sw, lineage_st, lineage_num]),
+            mo.hstack([lineage_sw, lineage_st, lineage_num]),
         ]
     )
     controls
@@ -157,11 +153,9 @@ def _(mo):
         joint_sw_max,
         joint_sw_min,
         joint_sw_points,
-        lineage_mu,
         lineage_num,
         lineage_st,
         lineage_sw,
-        mu,
         num_generations,
         num_hosts,
         num_simulations,
@@ -183,7 +177,6 @@ def _(
     Prior,
     chi,
     fixed_st,
-    mu,
     np,
     num_generations,
     num_hosts,
@@ -216,7 +209,6 @@ def _(
                 num_generations=int(num_generations.value),
                 num_simulations=int(num_simulations.value),
                 num_transmitted_alleles=int(q.value),
-                mu=float(mu.value),
                 p_init=float(p_init.value),
             )
             mean_by_sw.append(np.asarray(mean_traj_sw))
@@ -232,7 +224,6 @@ def _(
     chi,
     fixed_st,
     mean_by_sw,
-    mu,
     np,
     num_generations,
     num_hosts,
@@ -285,7 +276,7 @@ def _(
         sw_axes[1].set_ylabel("prevalence")
         sw_axes[0].legend(loc="best", fontsize=8, ncol=2)
         sw_fixed_text = (
-            f"fixed: st={fixed_st.value:.2f}, chi={chi.value:.2f}, mu={mu.value:.4f}, "
+            f"fixed: st={fixed_st.value:.2f}, chi={chi.value:.2f}, "
             f"p_init={p_init.value:.2f}, Q={int(q.value)}, "
             f"num_hosts={int(num_hosts.value)}, "
             f"num_simulations={int(num_simulations.value)}"
@@ -305,7 +296,6 @@ def _(
     Prior,
     chi,
     fixed_sw,
-    mu,
     np,
     num_generations,
     num_hosts,
@@ -338,7 +328,6 @@ def _(
                 num_generations=int(num_generations.value),
                 num_simulations=int(num_simulations.value),
                 num_transmitted_alleles=int(q.value),
-                mu=float(mu.value),
                 p_init=float(p_init.value),
             )
             mean_by_st.append(np.asarray(mean_traj_st))
@@ -354,7 +343,6 @@ def _(
     chi,
     fixed_sw,
     mean_by_st,
-    mu,
     np,
     num_generations,
     num_hosts,
@@ -407,7 +395,7 @@ def _(
         st_axes[1].set_ylabel("prevalence")
         st_axes[0].legend(loc="best", fontsize=8, ncol=2)
         st_fixed_text = (
-            f"fixed: sw={fixed_sw.value:.2f}, chi={chi.value:.2f}, mu={mu.value:.4f}, "
+            f"fixed: sw={fixed_sw.value:.2f}, chi={chi.value:.2f}, "
             f"p_init={p_init.value:.2f}, Q={int(q.value)}, "
             f"num_hosts={int(num_hosts.value)}, "
             f"num_simulations={int(num_simulations.value)}"
@@ -432,7 +420,6 @@ def _(
     joint_sw_max,
     joint_sw_min,
     joint_sw_points,
-    mu,
     np,
     num_generations,
     num_hosts,
@@ -474,7 +461,6 @@ def _(
                     num_generations=int(num_generations.value),
                     num_simulations=int(num_simulations.value),
                     num_transmitted_alleles=int(q.value),
-                    mu=float(mu.value),
                     p_init=float(p_init.value),
                 )
                 final_gen = int(num_generations.value) - 1
@@ -504,7 +490,6 @@ def _(
     final_prev_grid,
     joint_st_values,
     joint_sw_values,
-    mu,
     num_generations,
     num_hosts,
     num_simulations,
@@ -547,7 +532,7 @@ def _(
         joint_fig.colorbar(joint_mean_plot, ax=joint_axes[0], fraction=0.046, pad=0.04)
         joint_fig.colorbar(joint_prev_plot, ax=joint_axes[1], fraction=0.046, pad=0.04)
         joint_fixed_text = (
-            f"fixed: chi={chi.value:.2f}, mu={mu.value:.4f}, p_init={p_init.value:.2f}, "
+            f"fixed: chi={chi.value:.2f}, p_init={p_init.value:.2f}, "
             f"Q={int(q.value)}, num_hosts={int(num_hosts.value)}, "
             f"num_simulations={int(num_simulations.value)}"
         )
@@ -566,7 +551,6 @@ def _(
     exact_lineage_expectation,
     initial_state_m_equals_one,
     lineage_expectation_formula,
-    lineage_mu,
     lineage_num,
     lineage_st,
     lineage_sw,
@@ -585,7 +569,6 @@ def _(
         for lineage_sw_i in lineage_sw_values:
             state_sw = initial_state_m_equals_one(
                 chi=float(chi.value),
-                mu=float(lineage_mu.value),
                 sw=float(lineage_sw_i),
                 st=float(lineage_st.value),
                 num_hosts=int(num_hosts.value),
@@ -608,7 +591,6 @@ def _(
         for lineage_st_i in lineage_st_values:
             state_st = initial_state_m_equals_one(
                 chi=float(chi.value),
-                mu=float(lineage_mu.value),
                 sw=float(lineage_sw.value),
                 st=float(lineage_st_i),
                 num_hosts=int(num_hosts.value),
@@ -631,7 +613,6 @@ def _(
         for chi_i in chi_values:
             state_chi = initial_state_m_equals_one(
                 chi=float(chi_i),
-                mu=float(lineage_mu.value),
                 sw=float(lineage_sw.value),
                 st=float(lineage_st.value),
                 num_hosts=int(num_hosts.value),

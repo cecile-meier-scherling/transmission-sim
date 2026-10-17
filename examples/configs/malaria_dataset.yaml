@@ -14,18 +14,13 @@ priors:
   num_transmitted_alleles:
     dist: randint
     kwargs:
-      minval: 2
-      maxval: 6
+      minval: 1
+      maxval: 10
   chi:
     dist: uniform
     kwargs:
       minval: 0.0
       maxval: 1.0
-  mu:
-    dist: loguniform
-    kwargs:
-      minval: 1.0e-9
-      maxval: 1.0e-7
   sw:
     dist: uniform
     kwargs:

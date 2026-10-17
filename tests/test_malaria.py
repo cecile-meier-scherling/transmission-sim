@@ -21,7 +21,6 @@ def test_malaria_shapes_and_bounds():
         num_generations=5,
         num_simulations=4,
         num_transmitted_alleles=2,
-        mu=1e-8,
         p_init=0.1,
     )
 
@@ -46,7 +45,6 @@ def test_malaria_deterministic_repeat():
         num_generations=4,
         num_simulations=3,
         num_transmitted_alleles=2,
-        mu=1e-8,
         p_init=0.2,
     )
     hist_b, _, _, state_b = sim.simulate(
@@ -54,7 +52,6 @@ def test_malaria_deterministic_repeat():
         num_generations=4,
         num_simulations=3,
         num_transmitted_alleles=2,
-        mu=1e-8,
         p_init=0.2,
     )
 
@@ -74,7 +71,6 @@ def test_malaria_always_starts_with_initial_generation():
         rng_init,
         num_simulations=2,
         num_transmitted_alleles=2,
-        mu=1e-8,
         p_init=0.5,
     )
 
@@ -83,7 +79,6 @@ def test_malaria_always_starts_with_initial_generation():
         num_generations=1,
         num_simulations=2,
         num_transmitted_alleles=2,
-        mu=1e-8,
         p_init=0.5,
     )
 
@@ -110,7 +105,6 @@ def test_malaria_fixed_priors_in_parameters():
         num_generations=2,
         num_simulations=5,
         num_transmitted_alleles=3,
-        mu=1e-8,
         p_init=0.3,
     )
     params_jax, param_names = state.parameter_matrix()
@@ -120,7 +114,6 @@ def test_malaria_fixed_priors_in_parameters():
         "num_hosts",
         "num_transmitted_alleles",
         "chi",
-        "mu",
         "sw",
         "st",
         "p_init",
@@ -129,10 +122,9 @@ def test_malaria_fixed_priors_in_parameters():
     np.testing.assert_array_equal(params[:, 0], np.full(5, 10.0, dtype=np.float32))
     np.testing.assert_array_equal(params[:, 1], np.full(5, 3.0, dtype=np.float32))
     np.testing.assert_allclose(params[:, 2], 0.25)
-    np.testing.assert_allclose(params[:, 3], 1e-8)
-    np.testing.assert_allclose(params[:, 4], -0.1)
-    np.testing.assert_allclose(params[:, 5], 0.2)
-    np.testing.assert_allclose(params[:, 6], 0.3)
+    np.testing.assert_allclose(params[:, 3], -0.1)
+    np.testing.assert_allclose(params[:, 4], 0.2)
+    np.testing.assert_allclose(params[:, 5], 0.3)
 
 
 def test_malaria_num_hosts_sampling_uses_choice_prior():
@@ -142,7 +134,6 @@ def test_malaria_num_hosts_sampling_uses_choice_prior():
         random.key(0),
         num_simulations=32,
         num_transmitted_alleles=4,
-        mu=1e-8,
         p_init=0.1,
     )
     samples = set(np.asarray(state.num_hosts).tolist())
@@ -152,23 +143,19 @@ def test_malaria_num_hosts_sampling_uses_choice_prior():
 
 
 def test_malaria_batch_params_sampling():
-    """Batch-level Q, mu, and p_init are sampled once per batch."""
+    """Batch-level Q and p_init are sampled once per batch."""
     sim = MalariaTransmission(
         num_transmitted_alleles=Prior("choice", {"values": [2, 4]}),
-        mu=Prior("choice", {"values": [1e-9, 1e-8]}),
         p_init=Prior("choice", {"values": [0.1, 0.5]}),
     )
     q_values = set()
-    mu_values = set()
     p_init_values = set()
     for seed in range(16):
-        q, mu, p_init = sim.sample_batch_params(random.key(seed))
+        q, p_init = sim.sample_batch_params(random.key(seed))
         q_values.add(q)
-        mu_values.add(mu)
         p_init_values.add(p_init)
 
     assert q_values <= {2, 4}
-    assert all(np.isclose(mu, [1e-9, 1e-8]).any() for mu in mu_values)
     assert all(np.isclose(p_init, [0.1, 0.5]).any() for p_init in p_init_values)
 
 
@@ -184,7 +171,6 @@ def test_malaria_zarr_smoke(tmp_path):
         num_generations=3,
         num_simulations=2,
         num_transmitted_alleles=2,
-        mu=1e-8,
         p_init=0.1,
     )
     store = tmp_path / "malaria.zarr"
@@ -226,7 +212,6 @@ def test_malaria_histogram_first_generation_matches_founder_distribution():
         num_generations=1,
         num_simulations=256,
         num_transmitted_alleles=2,
-        mu=0.0,
         p_init=0.25,
     )
 
@@ -311,11 +296,90 @@ def _batch_from_counts(
         state_num_mutants=state_num_mutants,
         state_num_alleles=state_num_alleles,
         parameters=np.asarray(
-            [[8.0, 2.0, 0.1, 1e-8, -0.1, 0.2, 0.3]],
+            [[8.0, 2.0, 0.1, -0.1, 0.2, 0.3]],
             dtype=np.float32,
         ),
         parameter_names=MalariaHistogramState.parameter_names(),
         num_transmitted_alleles=2,
-        batch_mu=1e-8,
         batch_p_init=0.3,
     )
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_q_sampling_covers_one_through_nine(configured):
+    if configured:
+        from examples.build_malaria_dataset import _prior_from_config
+        config = OmegaConf.load("examples/configs/malaria_dataset.yaml")
+        sim = MalariaTransmission(
+            num_transmitted_alleles=_prior_from_config(config.priors.num_transmitted_alleles)
+        )
+    else:
+        sim = MalariaTransmission()
+    samples = {sim.sample_batch_params(random.key(seed))[0] for seed in range(128)}
+    assert samples == set(range(1, 10))
+
+
+@pytest.mark.parametrize("q", [1, 9])
+@pytest.mark.parametrize("st", [0.0, 1.0])
+def test_superinfection_excludes_same_host(q, st):
+    from dataclasses import replace
+    import jax.numpy as jnp
+    from dl4bi_sps.malaria import _next_state_probs
+
+    sim = MalariaTransmission(
+        num_hosts=Prior("fixed", {"value": 2}),
+        chi=Prior("fixed", {"value": 1.0}),
+        sw=Prior("fixed", {"value": 0.0}),
+        st=Prior("fixed", {"value": st}),
+    )
+    state = sim.initial_state(random.key(0), 1, q, 0.0)
+    # One all-wild host and one all-mutant host must contribute exactly q mutants.
+    counts = jnp.zeros_like(state.num_hosts_by_state).at[0, 0].set(1).at[0, q].set(1)
+    probs = np.asarray(_next_state_probs(replace(state, num_hosts_by_state=counts)))
+    expected = np.zeros_like(probs)
+    expected[0, q + 1 + q] = 1.0
+    np.testing.assert_allclose(probs, expected, atol=1e-6)
+
+    # Two distinct hosts in the same state remain valid parents.
+    counts = jnp.zeros_like(counts).at[0, q].set(2)
+    probs = np.asarray(_next_state_probs(replace(state, num_hosts_by_state=counts)))
+    expected[:] = 0
+    expected[0, -1] = 1.0
+    np.testing.assert_allclose(probs, expected, atol=1e-6)
+
+
+@pytest.mark.parametrize("p_init", [0.0, 1.0])
+def test_no_mutation_from_fixed_population(p_init):
+    sim = MalariaTransmission(num_hosts=Prior("fixed", {"value": 16}))
+    counts, mutants, alleles, _ = sim.simulate(random.key(4), 3, 2, 9, p_init)
+    impossible = np.asarray(mutants != (p_init * alleles))
+    assert np.all(np.asarray(counts)[..., impossible] == 0)
+
+
+def test_superinfection_matches_weighted_individual_parent_enumeration():
+    from dataclasses import replace
+    import jax.numpy as jnp
+    from dl4bi_sps.malaria import _next_state_probs
+
+    sim = MalariaTransmission(
+        num_hosts=Prior("fixed", {"value": 4}),
+        chi=Prior("fixed", {"value": 1.0}),
+        sw=Prior("fixed", {"value": 0.0}),
+        st=Prior("fixed", {"value": 0.8}),
+    )
+    state = sim.initial_state(random.key(0), 1, 1, 0.0)
+    # Q=1 states: (0/1, 1/1, 0/2, 1/2, 2/2).
+    state = replace(state, num_hosts_by_state=jnp.asarray([[2, 1, 0, 1, 0]]))
+    frequencies = np.asarray([0.0, 0.0, 1.0, 0.5])
+    weights = 1 + 0.8 * frequencies
+    expected = np.zeros(3)
+    for first in range(4):
+        for second in range(4):
+            if first == second:
+                continue
+            probability = weights[first] / weights.sum() * weights[second] / (weights.sum() - weights[first])
+            pool = np.convolve([1 - frequencies[first], frequencies[first]],
+                               [1 - frequencies[second], frequencies[second]])
+            expected += probability * pool
+    observed = np.asarray(_next_state_probs(state))[0]
+    np.testing.assert_allclose(observed, np.r_[0.0, 0.0, expected], atol=1e-6)

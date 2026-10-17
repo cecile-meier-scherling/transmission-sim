@@ -44,7 +44,6 @@ def test_lineage_formula_spot_check():
 def test_exact_lineage_expectation_matches_formula_for_sw_sweep(Q: int, sw: float):
     state = initial_state_m_equals_one(
         chi=0.0,
-        mu=0.0,
         sw=sw,
         st=0.0,
         num_hosts=4096,
@@ -60,7 +59,6 @@ def test_exact_lineage_expectation_matches_formula_for_sw_sweep(Q: int, sw: floa
 def test_exact_lineage_expectation_matches_st_scaling(Q: int, st: float):
     state = initial_state_m_equals_one(
         chi=0.0,
-        mu=0.0,
         sw=0.0,
         st=st,
         num_hosts=4096,
