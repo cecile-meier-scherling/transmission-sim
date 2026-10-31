@@ -18,7 +18,7 @@ from which transmission sources are sampled.
 
 Selection acts at two distinct stages:
 
-- **Within-host selection** ($s_w \in [-1, 0)$): represents the replicative
+- **Within-host selection** ($s_w \in (-1, 0]$): represents the replicative
   fitness cost of K13 resistance mutations in the absence of drug pressure.
   Mutant alleles receive weight $1 + s_w$ during within-host resampling, while
   wild-type alleles receive weight 1. Setting `sw=0` disables this resampling.
@@ -30,9 +30,12 @@ Selection acts at two distinct stages:
 
 Each vector bite transmits $Q$ alleles. With probability `chi`, a recipient
 is superinfected and receives contributions from two distinct source hosts,
-for $2Q$ alleles in total. Within-host selection acts on the resulting allele
-pool. Multinomial sampling of the next
-generation preserves the host population size and introduces genetic drift.
+for $2Q$ alleles in total. Before source selection, within-host selection
+resamples each parent’s existing pool once. Transmission weights use these
+realized post-selection mutant frequencies; recipients undergo within-host
+selection at the start of their own onward-transmission step. Multinomial
+sampling of the next generation preserves the host population size and
+introduces genetic drift.
 Founding hosts carry $Q$ alleles, with mutant counts drawn using `p_init`.
 
 See [dataset generation](examples/build_malaria_dataset.py), its
@@ -50,7 +53,7 @@ sampling distributions.
 | `Nh` | `num_hosts` | `int` | Effective number of hosts per generation; clamped to at least 2 |
 | `Q` | `num_transmitted_alleles` | `int` | Number of alleles transmitted per vector bite; at least 1 |
 | `chi` | `chi` | `float` | Superinfection probability, between 0 and 1 |
-| `sw` | `sw` | `float` | Within-host selection coefficient, $s_w \in [-1, 0)$; 0 is also supported as a neutral control |
+| `sw` | `sw` | `float` | Within-host selection coefficient, $s_w \in (-1, 0]$; 0 is also supported as a neutral control |
 | `st` | `st` | `float` | Transmission selection coefficient, $s_t \in [0, 1]$ |
 | `p_init` | `p_init` | `float` | Initial K13 mutant allele frequency, between 0 and 1 |
 
@@ -60,7 +63,9 @@ parameter.
 Within each simulation batch, `Q` and `p_init` are shared, while `Nh`,
 `chi`, `sw`, and `st` are sampled independently for each simulation. Output
 host-state counts have shape `(num_simulations, num_generations, 3 * Q + 2)`;
-the first generation is the founding population.
+the first generation is the founding population. All stored generations are
+before within-host selection. The supported selection range excludes `sw=-1`,
+where an entirely mutant pool would have zero total resampling weight.
 
 ## Installation
 

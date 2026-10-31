@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import jax.numpy as jnp
+import numpy as np
 from jax import Array
 
 from dl4bi_sps.malaria import (
     MalariaHistogramState,
     MalariaTransmission,
     _host_state_table_jax,
-    _next_state_probs,
+    _selection_kernel,
 )
 
 
@@ -41,15 +42,19 @@ def lineage_expectation_formula(
     st: Array | float,
     chi: Array | float,
 ) -> Array:
-    """Approximate E[M_{t+1}|M_t=1] from the user-supplied expression."""
+    """Large-population expectation for one mutant in a Q-allele parent.
+
+    Average transmission weighting jointly with the selected mutant count.
+    Finite-population normalization and distinct-parent corrections are omitted.
+    """
     q = jnp.asarray(Q, dtype=jnp.float32)
     sw = jnp.asarray(sw, dtype=jnp.float32)
     st = jnp.asarray(st, dtype=jnp.float32)
     chi = jnp.asarray(chi, dtype=jnp.float32)
-    within_host = q * (1.0 + sw) / (q + sw)
-    transmission = 1.0 + st / q
-    superinfection = 1.0 + chi
-    return within_host * transmission * superinfection
+    r = (1.0 + sw) / (q + sw)
+    mean = jnp.where(sw == 0.0, 1.0, q * r)
+    second_moment = jnp.where(sw == 0.0, 1.0, q * r * (1 - r) + (q * r)**2)
+    return (1.0 + chi) * (mean + st * second_moment / q)
 
 
 def initial_state_m_equals_one(
@@ -81,13 +86,25 @@ def initial_state_m_equals_one(
 
 
 def exact_lineage_expectation(state: MalariaHistogramState) -> Array:
-    """Compute exact one-step total E[M_{t+1}|state] from transition probabilities."""
-    state_probs = _next_state_probs(state)
-    expected_mutants_per_host = jnp.sum(
-        state_probs * state.state_num_mutants.astype(jnp.float32)[None, :],
-        axis=-1,
-    )
-    return state.num_hosts.astype(jnp.float32) * expected_mutants_per_host
+    """Exact one-step expectation for one mutant in a monoinfected host.
+
+    Enumerate that parent's post-selection mutant count and account for both
+    ordered ways it can be included among two distinct superinfection sources.
+    """
+    counts = np.asarray(state.num_hosts_by_state)
+    mutants = np.asarray(state.state_num_mutants)
+    if not (np.all(counts[:, 1] == 1) and np.all(counts @ mutants == 1)):
+        raise ValueError("Expected exactly one mutant in a monoinfected host.")
+    q = state.num_transmitted_alleles
+    r = jnp.arange(q + 1, dtype=jnp.float32)[None, :]
+    selected_probs = _selection_kernel(q, state.sw)[:, 1, :]
+    n = state.num_hosts.astype(jnp.float32)[:, None]
+    weights = 1 + state.st[:, None] * r / q
+    total = n - 1 + weights
+    first = weights / total
+    second = (n - 1) / total * weights / (total - 1)
+    inclusion = first + state.chi[:, None] * second
+    return jnp.sum(selected_probs * n * inclusion * r, axis=-1)
 
 
 def run_trajectory(

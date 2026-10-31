@@ -35,7 +35,8 @@ def test_metrics_on_handbuilt_histogram():
 
 def test_lineage_formula_spot_check():
     observed = float(lineage_expectation_formula(Q=4, sw=-0.2, st=0.5, chi=0.3))
-    expected = (4.0 * (1.0 - 0.2) / (4.0 - 0.2)) * (1.0 + 0.5 / 4.0) * (1.0 + 0.3)
+    r = 0.8 / 3.8
+    expected = 1.3 * (4 * r + 0.5 / 4 * (4 * r * (1 - r) + (4 * r)**2))
     np.testing.assert_allclose(observed, expected, atol=1e-7)
 
 
@@ -67,3 +68,14 @@ def test_exact_lineage_expectation_matches_st_scaling(Q: int, st: float):
     observed = float(exact_lineage_expectation(state)[0])
     expected = float(lineage_expectation_formula(Q=Q, sw=0.0, st=st, chi=0.0))
     np.testing.assert_allclose(observed, expected, rtol=1e-3, atol=1e-5)
+
+
+@pytest.mark.parametrize("chi", [0.0, 0.5, 1.0])
+def test_exact_lineage_expectation_averages_parent_outcomes(chi):
+    state = initial_state_m_equals_one(chi=chi, sw=-0.5, st=1.0, num_hosts=2, Q=2)
+    # R has probabilities (4/9, 4/9, 1/9). With two distinct sources,
+    # superinfected children always receive the mutant-bearing parent once.
+    mono = (4 / 9) * (2 * 1.5 / 2.5) + (1 / 9) * (2 * 2 / 3 * 2)
+    superinfected = 2 * (2 / 3)
+    expected = (1 - chi) * mono + chi * superinfected
+    np.testing.assert_allclose(exact_lineage_expectation(state)[0], expected, rtol=1e-6)

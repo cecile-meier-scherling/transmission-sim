@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 
 import jax
@@ -178,6 +178,10 @@ class MalariaTransmission:
     ) -> tuple[Array, Array, Array, MalariaHistogramState]:
         """Simulate host-state count trajectories.
 
+        Stored generations are before within-host selection, including founders.
+        Each transition resamples parental pools, selects sources using their
+        updated frequencies, then draws Q alleles per source to form recipients.
+
         Batch-level parameters ``num_transmitted_alleles`` and ``p_init`` are
         shared across all simulations. ``chi``, ``num_hosts``, ``sw``, and ``st`` are
         sampled independently per simulation.
@@ -266,9 +270,11 @@ def _transmit_generation(
     rng: Array,
     state: MalariaHistogramState,
 ) -> MalariaHistogramState:
+    rng_selection, rng_transmission = random.split(rng)
+    state = _select_within_hosts(rng_selection, state)
     state_probs = _next_state_probs(state)
     num_hosts_by_state = _sample_multinomial_counts(
-        rng,
+        rng_transmission,
         state.num_hosts,
         state_probs,
     )
@@ -285,7 +291,33 @@ def _transmit_generation(
     )
 
 
+def _select_within_hosts(
+    rng: Array,
+    state: MalariaHistogramState,
+) -> MalariaHistogramState:
+    """Resample each parent's pool once, preserving host counts and pool sizes.
+
+    Hosts in each original state independently transition according to the
+    selection kernel. Sample integer counts before weighting transmission
+    sources: expected counts would lose shared parental resampling randomness.
+    """
+    q = state.num_transmitted_alleles
+    keys = random.split(rng, 2)
+    selected_counts = []
+    for key, size, counts in zip(
+        keys,
+        (q, 2 * q),
+        (state.num_hosts_by_state[:, :q + 1], state.num_hosts_by_state[:, q + 1:]),
+    ):
+        transitions = _sample_multinomial_counts(
+            key, counts, _selection_kernel(size, state.sw)
+        )
+        selected_counts.append(transitions.sum(axis=-2))
+    return replace(state, num_hosts_by_state=jnp.concatenate(selected_counts, axis=-1))
+
+
 def _next_state_probs(state: MalariaHistogramState) -> Array:
+    """Recipient probabilities given realized post-selection parental counts."""
     num_transmitted_alleles = state.num_transmitted_alleles
     state_allele_freq = (
         state.state_num_mutants.astype(jnp.float32)
@@ -300,11 +332,6 @@ def _next_state_probs(state: MalariaHistogramState) -> Array:
         state_allele_freq,
     )
     single_parent_pool_probs = parent_probs @ parent_pool_kernel
-    non_superinfected_probs = _post_host_process_probs(
-        single_parent_pool_probs,
-        num_transmitted_alleles,
-        state.sw,
-    )
 
     # Draw the first host with transmission weights, then exclude that host
     # before drawing the second. Distinct hosts can share the same state.
@@ -321,15 +348,10 @@ def _next_state_probs(state: MalariaHistogramState) -> Array:
         in_axes=(None, 0),
     )(parent_pool_kernel, second_pool_probs)
     superinfected_pool_probs = jnp.einsum("bs,bsk->bk", parent_probs, pair_pool_probs)
-    superinfected_probs = _post_host_process_probs(
-        superinfected_pool_probs,
-        2 * num_transmitted_alleles,
-        state.sw,
-    )
     state_probs = jnp.concatenate(
         [
-            (1.0 - state.chi[:, None]) * non_superinfected_probs,
-            state.chi[:, None] * superinfected_probs,
+            (1.0 - state.chi[:, None]) * single_parent_pool_probs,
+            state.chi[:, None] * superinfected_pool_probs,
         ],
         axis=-1,
     )
@@ -378,19 +400,6 @@ def _sample_multinomial_counts(rng: Array, num_trials: Array, probs: Array) -> A
     draws = jnp.moveaxis(draws, 0, -1)
     final_draw = jnp.rint(remaining_count).astype(jnp.int32)[..., None]
     return jnp.concatenate([draws, final_draw], axis=-1)
-
-
-def _post_host_process_probs(
-    pre_process_probs: Array,
-    num_alleles: int,
-    sw: Array,
-) -> Array:
-    selection_kernel = _selection_kernel(num_alleles, sw)
-    return jnp.einsum(
-        "bm,bms->bs",
-        pre_process_probs,
-        selection_kernel,
-    )
 
 
 def _selection_kernel(num_alleles: int, sw: Array) -> Array:

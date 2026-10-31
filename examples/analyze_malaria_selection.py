@@ -23,11 +23,12 @@ def _(mo):
     - the approximation
       \[
       \mathbb{E}[M_{t+1} \mid M_t=1] \approx
-      \frac{Q(1+s_w)}{Q+s_w}
-      \left(1+\frac{s_t}{Q}\right)
-      (1+\chi)
+      (1+\chi)\left(\mathbb{E}[R]+\frac{s_t}{Q}\mathbb{E}[R^2]\right)
       \]
-      compared with the exact one-step expectation from the simulator kernel.
+      for one mutant initially in a monoinfected host, compared with the exact
+      finite-population expectation. Here \(R\) is its post-selection mutant
+      count: \(R\sim\mathrm{Binomial}(Q,(1+s_w)/(Q+s_w))\) for negative `sw`,
+      while \(R=1\) when `sw=0` (resampling skipped).
 
     Note: generation `0` is the founding distribution and depends on `p_init`.
     Selection effects begin at generation `1`.

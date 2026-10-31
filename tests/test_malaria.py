@@ -383,3 +383,78 @@ def test_superinfection_matches_weighted_individual_parent_enumeration():
             expected += probability * pool
     observed = np.asarray(_next_state_probs(state))[0]
     np.testing.assert_allclose(observed, np.r_[0.0, 0.0, expected], atol=1e-6)
+
+
+@pytest.mark.parametrize("sw", [0.0, -0.9])
+def test_selection_precedes_superinfection_pooling(sw):
+    """Pure parents stay pure; their mixed child must not be resampled yet."""
+    from dataclasses import replace
+    import jax.numpy as jnp
+    from dl4bi_sps.malaria import _transmit_generation
+
+    sim = MalariaTransmission(
+        num_hosts=Prior("fixed", {"value": 2}),
+        chi=Prior("fixed", {"value": 1.0}),
+        sw=Prior("fixed", {"value": sw}),
+        st=Prior("fixed", {"value": 1.0}),
+    )
+    state = sim.initial_state(random.key(0), 16, 1, 0.0)
+    counts = jnp.tile(jnp.asarray([[1, 1, 0, 0, 0]]), (16, 1))
+    result = _transmit_generation(random.key(1), replace(state, num_hosts_by_state=counts))
+    np.testing.assert_array_equal(
+        result.num_hosts_by_state, np.tile([[0, 0, 0, 2, 0]], (16, 1))
+    )
+
+
+@pytest.mark.parametrize("sw", [0.0, -0.5])
+def test_parent_selection_preserves_host_pool_sizes(sw):
+    from dataclasses import replace
+    import jax.numpy as jnp
+    from dl4bi_sps.malaria import _select_within_hosts
+
+    sim = MalariaTransmission(sw=Prior("fixed", {"value": sw}))
+    state = sim.initial_state(random.key(0), 4, 2, 0.0)
+    counts = jnp.tile(jnp.asarray([[3, 7, 2, 1, 4, 5, 6, 2]]), (4, 1))
+    state = replace(state, num_hosts_by_state=counts, num_hosts=counts.sum(axis=-1))
+    selected = np.asarray(_select_within_hosts(random.key(1), state).num_hosts_by_state)
+    np.testing.assert_array_equal(selected[:, :3].sum(axis=-1), 12)
+    np.testing.assert_array_equal(selected[:, 3:].sum(axis=-1), 18)
+    assert np.all(selected >= 0)
+    if sw == 0.0:
+        np.testing.assert_array_equal(selected, counts)
+
+
+def test_transmission_weights_use_realized_parent_selection():
+    """Compare one transition against enumeration of a mixed parent's outcomes."""
+    from dataclasses import replace
+    from math import comb
+    import jax
+    import jax.numpy as jnp
+    from dl4bi_sps.malaria import _transmit_generation
+
+    # Two parents: one wild-type and one with 1/2 mutants. After selection,
+    # R ~ Binomial(2, 1/3), and its source weight is 1 + R/2.
+    n = 8192
+    sim = MalariaTransmission(
+        num_hosts=Prior("fixed", {"value": 2}),
+        chi=Prior("fixed", {"value": 0.0}),
+        sw=Prior("fixed", {"value": -0.5}),
+        st=Prior("fixed", {"value": 1.0}),
+    )
+    state = sim.initial_state(random.key(0), n, 2, 0.0)
+    counts = jnp.tile(jnp.asarray([[1, 1, 0, 0, 0, 0, 0, 0]]), (n, 1))
+    result = jax.jit(_transmit_generation)(
+        random.key(42), replace(state, num_hosts_by_state=counts)
+    )
+    expected = np.zeros(8)
+    for r in range(3):
+        probability = comb(2, r) * (1 / 3)**r * (2 / 3)**(2 - r)
+        frequency = r / 2
+        source_probability = (1 + frequency) / (2 + frequency)
+        expected[0] += probability * (1 - source_probability)
+        for k in range(3):
+            expected[k] += probability * source_probability * (
+                comb(2, k) * frequency**k * (1 - frequency)**(2 - k)
+            )
+    observed = np.asarray(result.num_hosts_by_state).mean(axis=0) / 2
+    np.testing.assert_allclose(observed, expected, atol=0.015)
