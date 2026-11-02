@@ -420,11 +420,31 @@ def test_parent_selection_preserves_host_pool_sizes(sw):
     np.testing.assert_array_equal(selected[:, :3].sum(axis=-1), 12)
     np.testing.assert_array_equal(selected[:, 3:].sum(axis=-1), 18)
     assert np.all(selected >= 0)
-    if sw == 0.0:
-        np.testing.assert_array_equal(selected, counts)
 
 
-def test_transmission_weights_use_realized_parent_selection():
+def test_neutral_within_host_drift_preserves_mean_but_has_variance():
+    """Neutral mixed pools drift; pure pools remain absorbing, with no jump at zero."""
+    import jax.numpy as jnp
+    from dl4bi_sps.malaria import _selection_kernel
+
+    k = 4
+    kernel = np.asarray(_selection_kernel(k, jnp.asarray([0.0])))[0]
+    # The multinomial sampler normalizes the float32 PMF before drawing.
+    kernel = kernel.astype(np.float64)
+    kernel /= kernel.sum(axis=-1, keepdims=True)
+    outcomes = np.arange(k + 1)
+    means = kernel @ outcomes
+    variances = kernel @ outcomes**2 - means**2
+    np.testing.assert_allclose(means, outcomes, atol=2e-6)
+    np.testing.assert_allclose(variances, outcomes * (1 - outcomes / k), atol=2e-6)
+    np.testing.assert_array_equal(kernel[0], [1, 0, 0, 0, 0])
+    np.testing.assert_array_equal(kernel[-1], [0, 0, 0, 0, 1])
+    near_zero = np.asarray(_selection_kernel(k, jnp.asarray([-1e-6])))[0]
+    np.testing.assert_allclose(kernel, near_zero, atol=2e-6)
+
+
+@pytest.mark.parametrize("sw", [-0.5, 0.0])
+def test_transmission_weights_use_realized_parent_selection(sw):
     """Compare one transition against enumeration of a mixed parent's outcomes."""
     from dataclasses import replace
     from math import comb
@@ -433,12 +453,13 @@ def test_transmission_weights_use_realized_parent_selection():
     from dl4bi_sps.malaria import _transmit_generation
 
     # Two parents: one wild-type and one with 1/2 mutants. After selection,
-    # R ~ Binomial(2, 1/3), and its source weight is 1 + R/2.
+    # R ~ Binomial(2, p), and its source weight is 1 + R/2.
+    p = (1 + sw) / (2 + sw)
     n = 8192
     sim = MalariaTransmission(
         num_hosts=Prior("fixed", {"value": 2}),
         chi=Prior("fixed", {"value": 0.0}),
-        sw=Prior("fixed", {"value": -0.5}),
+        sw=Prior("fixed", {"value": sw}),
         st=Prior("fixed", {"value": 1.0}),
     )
     state = sim.initial_state(random.key(0), n, 2, 0.0)
@@ -448,7 +469,7 @@ def test_transmission_weights_use_realized_parent_selection():
     )
     expected = np.zeros(8)
     for r in range(3):
-        probability = comb(2, r) * (1 / 3)**r * (2 / 3)**(2 - r)
+        probability = comb(2, r) * p**r * (1 - p)**(2 - r)
         frequency = r / 2
         source_probability = (1 + frequency) / (2 + frequency)
         expected[0] += probability * (1 - source_probability)

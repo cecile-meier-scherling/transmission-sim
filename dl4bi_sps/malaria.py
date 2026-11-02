@@ -403,17 +403,13 @@ def _sample_multinomial_counts(rng: Array, num_trials: Array, probs: Array) -> A
 
 
 def _selection_kernel(num_alleles: int, sw: Array) -> Array:
+    """Resample parental pools, retaining neutral drift when sw is zero."""
     num_mutants = jnp.arange(num_alleles + 1, dtype=jnp.float32)
     num_wild = num_alleles - num_mutants
     mutant_weight = (1.0 + sw[:, None]) * num_mutants[None, :]
     total_weight = num_wild[None, :] + mutant_weight
     p = _probability(jnp.where(total_weight > 0.0, mutant_weight / total_weight, 0.0))
-    resample_kernel = _binomial_pmf(num_alleles, p)
-    identity_kernel = jnp.broadcast_to(
-        jnp.eye(num_alleles + 1, dtype=jnp.float32),
-        resample_kernel.shape,
-    )
-    return jnp.where(sw[:, None, None] == 0.0, identity_kernel, resample_kernel)
+    return _binomial_pmf(num_alleles, p)
 
 
 def _binomial_pmf(num_trials: int, p: Array) -> Array:

@@ -27,8 +27,8 @@ def _(mo):
       \]
       for one mutant initially in a monoinfected host, compared with the exact
       finite-population expectation. Here \(R\) is its post-selection mutant
-      count: \(R\sim\mathrm{Binomial}(Q,(1+s_w)/(Q+s_w))\) for negative `sw`,
-      while \(R=1\) when `sw=0` (resampling skipped).
+      count: \(R\sim\mathrm{Binomial}(Q,(1+s_w)/(Q+s_w))\), including
+      \(R\sim\mathrm{Binomial}(Q,1/Q)\) when `sw=0` (neutral drift).
 
     Note: generation `0` is the founding distribution and depends on `p_init`.
     Selection effects begin at generation `1`.

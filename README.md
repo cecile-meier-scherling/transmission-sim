@@ -21,7 +21,8 @@ Selection acts at two distinct stages:
 - **Within-host selection** ($s_w \in (-1, 0]$): represents the replicative
   fitness cost of K13 resistance mutations in the absence of drug pressure.
   Mutant alleles receive weight $1 + s_w$ during within-host resampling, while
-  wild-type alleles receive weight 1. Setting `sw=0` disables this resampling.
+  wild-type alleles receive weight 1. Setting `sw=0` gives both types equal
+  weight while retaining random within-host resampling (neutral drift).
 - **Transmission selection** ($s_t \in [0, 1]$): represents the survival
   advantage of hosts carrying K13 mutant alleles under artemisinin treatment.
   A host with mutant allele frequency $p$ receives source-selection weight
@@ -66,6 +67,16 @@ host-state counts have shape `(num_simulations, num_generations, 3 * Q + 2)`;
 the first generation is the founding population. All stored generations are
 before within-host selection. The supported selection range excludes `sw=-1`,
 where an entirely mutant pool would have zero total resampling weight.
+
+### Compatibility with previously generated datasets
+
+Earlier versions skipped within-host resampling at exactly `sw=0`. The current
+model retains neutral drift there; negative `sw` values use the same transition
+rule as before. Existing simulations with negative `sw` do not need regeneration
+for this change. Regenerate zero-valued controls and any analyses or training
+datasets containing them when comparing against the current model. Preserve the
+original generation commit in dataset provenance rather than relabeling old
+zero-valued simulations as current-model output.
 
 ## Installation
 

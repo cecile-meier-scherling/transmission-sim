@@ -52,8 +52,8 @@ def lineage_expectation_formula(
     st = jnp.asarray(st, dtype=jnp.float32)
     chi = jnp.asarray(chi, dtype=jnp.float32)
     r = (1.0 + sw) / (q + sw)
-    mean = jnp.where(sw == 0.0, 1.0, q * r)
-    second_moment = jnp.where(sw == 0.0, 1.0, q * r * (1 - r) + (q * r)**2)
+    mean = q * r
+    second_moment = q * r * (1 - r) + (q * r)**2
     return (1.0 + chi) * (mean + st * second_moment / q)
 
 
